@@ -1,0 +1,23 @@
+# docker-compose.yml
+services:
+  sentinel-collector:
+    build: .
+    container_name: sentinel-collector
+    command: python -m src.collector
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped
+
+  sentinel-dashboard:
+    build: .
+    container_name: sentinel-dashboard
+    command: streamlit run app/dashboard.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    depends_on:
+      - sentinel-collector
+    restart: unless-stopped
