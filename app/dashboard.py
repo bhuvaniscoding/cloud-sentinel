@@ -45,23 +45,23 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Actions & Controls")
 
 if data_mode.startswith("Synthetic"):
-    if st.sidebar.button("Regenerate Synthetic Chaos Dataset", use_container_width=True):
+    if st.sidebar.button("Regenerate Synthetic Chaos Dataset", width="stretch"):
         generate_synthetic_workload()
         run_scientific_evaluation()
         st.sidebar.success("Generated 600 rows & re-evaluated ML pipeline!")
 else:
     col_a, col_b = st.sidebar.columns(2)
-    if col_a.button("Sample 1 Tick", use_container_width=True):
+    if col_a.button("Sample 1 Tick", width="stretch"):
         collector = SystemCollector(source_name="live")
         insert_metric(collector.collect_once())
-    if col_b.button("Sample 10 Ticks", use_container_width=True):
+    if col_b.button("Sample 10 Ticks", width="stretch"):
         collector = SystemCollector(source_name="live")
         with st.sidebar.status("Sampling live hardware..."):
             for _ in range(10):
                 insert_metric(collector.collect_once())
         st.sidebar.success("Captured 10 live observations!")
 
-    if st.sidebar.button("Train Baseline on Current Live Data", use_container_width=True):
+    if st.sidebar.button("Train Baseline on Current Live Data", width="stretch"):
         live_raw = fetch_recent_metrics("live", limit=500)
         if len(live_raw) >= 15:
             det = AnomalyDetector()
@@ -172,7 +172,7 @@ with tab1:
         ))
 
     fig.update_layout(height=420, template="plotly_dark", margin=dict(l=20, r=20, t=30, b=20))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.subheader("Isolation Forest Anomaly Score Timeline")
     fig_score = go.Figure()
@@ -184,7 +184,7 @@ with tab1:
         line=dict(color="#a855f7", width=2),
     ))
     fig_score.update_layout(height=250, template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20))
-    st.plotly_chart(fig_score, use_container_width=True)
+    st.plotly_chart(fig_score, width="stretch")
 
 # --- TAB 2: Predictive Forecaster ---
 with tab2:
@@ -233,7 +233,7 @@ with tab2:
         xaxis_title="Relative Time Steps (Ticks)",
         yaxis_title=f"{target_res} (%)",
     )
-    st.plotly_chart(fig_fc, use_container_width=True)
+    st.plotly_chart(fig_fc, width="stretch")
 
 # --- TAB 3: Operational Alerts Log ---
 with tab3:
@@ -252,7 +252,7 @@ with tab3:
         "net_sent_kbps", "anomaly_score", "rule_alert", "ml_anomaly",
         "incident_alert", "rule_violation_detail", "root_cause_summary"
     ]].tail(50)
-    st.dataframe(alerts_df, use_container_width=True)
+    st.dataframe(alerts_df, width="stretch")
 
 # --- TAB 4: Model Evaluation ---
 with tab4:
@@ -281,6 +281,6 @@ with tab4:
             st.write(f"- **F1-Score:** `{m_rule['f1_score']*100:.1f}%`")
 
         st.markdown("#### Per-Scenario Detection Comparison")
-        st.dataframe(eval_Bundle["scenario_breakdown"], use_container_width=True)
+        st.dataframe(eval_Bundle["scenario_breakdown"], width="stretch")
     else:
         st.warning("Switch to **Synthetic Evaluation Lab** in the sidebar to view ground-truth evaluation metrics.")
