@@ -8,24 +8,59 @@ from src.database import init_db, insert_metric
 class SystemCollector:
     def __init__(self, source_name: str = "live"):
         self.source_name = source_name
-        net_init = psutil.net_io_counters()
-        self.last_bytes_sent = net_init.bytes_sent if net_init else 0
-        self.last_bytes_recv = net_init.bytes_recv if net_init else 0
-        self.last_time = time.time()
+        self.last_monotonic = time.monotonic()
+
+        # Baseline network counters
+        net = self._safe_net_counters()
+        self.last_bytes_sent = net.bytes_sent if net else 0
+        self.last_bytes_recv = net.bytes_recv if net else 0
+
+        # Baseline disk I/O counters
+        disk_io = self._safe_disk_io_counters()
+        self.last_disk_read = disk_io.read_bytes if disk_io else 0
+        self.last_disk_write = disk_io.write_bytes if disk_io else 0
+
+        # Prime CPU measurement
         psutil.cpu_percent(interval=None)
 
+    @staticmethod
+    def _safe_net_counters():
+        try:
+            return psutil.net_io_counters()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _safe_disk_io_counters():
+        try:
+            return psutil.disk_io_counters()
+        except Exception:
+            return None
+
     def collect_once(self) -> dict:
-        """Captures a single snapshot of CPU, RAM, Disk, and Network rates."""
-        now = time.time()
-        dt = max(now - self.last_time, 0.001)
+        """Captures fault-isolated OS metrics and converts cumulative counters to KB/s rates."""
+        now_mono = time.monotonic()
+        dt = max(now_mono - self.last_monotonic, 0.001)
+        self.last_monotonic = now_mono
 
-        cpu = psutil.cpu_percent(interval=None)
-        mem = psutil.virtual_memory().percent
-        
-        disk_path = "C:\\" if psutil.WINDOWS else "/"
-        disk = psutil.disk_usage(disk_path).percent
+        try:
+            cpu = float(psutil.cpu_percent(interval=None))
+        except Exception:
+            cpu = 0.0
 
-        net = psutil.net_io_counters()
+        try:
+            mem = float(psutil.virtual_memory().percent)
+        except Exception:
+            mem = 0.0
+
+        try:
+            disk_path = "C:\\" if psutil.WINDOWS else "/"
+            disk = float(psutil.disk_usage(disk_path).percent)
+        except Exception:
+            disk = 0.0
+
+        # Network Throughput Rates (KB/s)
+        net = self._safe_net_counters()
         if net:
             sent_kbps = max(0.0, (net.bytes_sent - self.last_bytes_sent) / dt / 1024.0)
             recv_kbps = max(0.0, (net.bytes_recv - self.last_bytes_recv) / dt / 1024.0)
@@ -34,7 +69,15 @@ class SystemCollector:
         else:
             sent_kbps, recv_kbps = 0.0, 0.0
 
-        self.last_time = now
+        # Disk I/O Rates (KB/s)
+        disk_io = self._safe_disk_io_counters()
+        if disk_io:
+            read_kbps = max(0.0, (disk_io.read_bytes - self.last_disk_read) / dt / 1024.0)
+            write_kbps = max(0.0, (disk_io.write_bytes - self.last_disk_write) / dt / 1024.0)
+            self.last_disk_read = disk_io.read_bytes
+            self.last_disk_write = disk_io.write_bytes
+        else:
+            read_kbps, write_kbps = 0.0, 0.0
 
         return {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -42,16 +85,18 @@ class SystemCollector:
             "cpu_percent": round(cpu, 2),
             "memory_percent": round(mem, 2),
             "disk_percent": round(disk, 2),
+            "disk_read_kbps": round(read_kbps, 2),
+            "disk_write_kbps": round(write_kbps, 2),
             "net_sent_kbps": round(sent_kbps, 2),
             "net_recv_kbps": round(recv_kbps, 2),
-            "is_labeled_anomaly": 0
+            "is_labeled_anomaly": 0,
+            "scenario_label": "normal",
         }
 
 def run_collector_loop(max_iterations: int = None):
-    """Continuously collects and stores system metrics."""
     init_db()
     collector = SystemCollector(source_name="live")
-    print(f"[Collector] Started monitoring. Saving to SQLite every {COLLECTION_INTERVAL_SEC}s... (Press Ctrl+C to stop)")
+    print(f"[Collector] Monitoring started (Interval: {COLLECTION_INTERVAL_SEC}s). Press Ctrl+C to stop.")
     
     count = 0
     try:
@@ -61,14 +106,13 @@ def run_collector_loop(max_iterations: int = None):
             insert_metric(record)
             count += 1
             print(
-                f"[{count}] CPU: {record['cpu_percent']}% | "
-                f"RAM: {record['memory_percent']}% | "
-                f"Net Down: {record['net_recv_kbps']} KB/s"
+                f"[{count}] CPU: {record['cpu_percent']}% | RAM: {record['memory_percent']}% | "
+                f"Disk W: {record['disk_write_kbps']} KB/s | Net Down: {record['net_recv_kbps']} KB/s"
             )
             if max_iterations and count >= max_iterations:
                 break
     except KeyboardInterrupt:
-        print("\n[Collector] Stopped cleanly by user.")
+        print("\n[Collector] Stopped cleanly.")
 
 if __name__ == "__main__":
     run_collector_loop()
